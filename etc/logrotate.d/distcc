@@ -1,0 +1,10 @@
+/var/log/distccd.log {
+  daily
+  rotate 30
+
+  compress
+  copytruncate
+  delaycompress
+  missingok
+  notifempty
+}

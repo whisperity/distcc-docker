@@ -1,0 +1,6 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+
+echo "$(date): clear-tmp: Removing potentially stale temporaries..." >&2
+rm -vrf /tmp/*
+echo "$(date): clear-tmp: Done. For now." >&2
