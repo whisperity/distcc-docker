@@ -3,15 +3,17 @@
 #
 # main() of the container.
 
-SYSTEM_LOGF="/var/log/syslog"
+CRON_RUNNING=0
 DISTCC_LOGF="/var/log/distccd.log"
 DISTCC_PIDF="/run/distccd.pid"
+DISTCC_RUNNING=0
 DISTCC_USER="$(cat /var/lib/distcc/distcc.user)"
 DISTCC_TAIL_PID=0
+SYSTEM_LOGF="/var/log/syslog"
 
 
 # Arguments.
-JOBS=$(nproc)
+JOBS="$(( $(nproc) - 2 ))"
 NICE=5
 STARTUP_TIMEOUT=30
 EXEC_CUSTOM=0
@@ -90,12 +92,12 @@ function _check_init() {
   if [ $? -ne 0 ]; then
     echo "[!!!] ALERT! This container is expected to be run with" \
       "'docker run --init'!" >&2
-    echo "    Init process inside container instead is:" >&2
+    echo "        Init process inside container instead is:" >&2
     ps 1 >&2
-    _syslog "_" $$ "Init is: $(ps 1 | tail -n 1)"
+    _syslog "_" $$ "! Unknown init daemon: $(ps 1 | tail -n 1)"
 
     echo >&2
-    echo "    We will do our best, but consider this to be" \
+    echo "        We will do our best, but consider this to be" \
       "undefined behaviour!" >&2
   fi
 }
@@ -114,6 +116,7 @@ function start_cron() {
   echo "[+++] Starting cron..." >&2
   std_cron --start
   _syslog "cron" "$(cat "/run/crond.pid")" "Cron daemon started."
+  CRON_RUNNING=1
   return $?
 }
 
@@ -121,6 +124,7 @@ function stop_cron() {
   echo "[---] Stopping cron..." >&2
   _syslog "cron" "$(cat "/run/crond.pid")" "Cron daemon stopping..."
   std_cron --stop
+  CRON_RUNNING=0
   return $?
 }
 
@@ -156,7 +160,7 @@ function start_distccd() {
       --pid-file "$DISTCC_PIDF" \
       --log-file "$DISTCC_LOGF" \
       --log-level info
-  RC=$?
+  local RC=$?
   if [ $RC -ne 0 ]; then
     return $RC
   fi
@@ -172,10 +176,12 @@ function start_distccd() {
   if [ "$RC" -ne 0 ]; then
     echo "[:'(] distcc failed to start after $STARTUP_TIMEOUT seconds!" >&2
     _syslog "_" $$ "DistCC daemon failed to start!"
+    DISTCC_RUNNING=0
   else
-    DISTCC_PID="$(cat $DISTCC_PIDF)"
+    local DISTCC_PID="$(cat $DISTCC_PIDF)"
     _syslog "distccd" "$DISTCC_PID" "DistCC daemon started."
     _syslog "distccd" "$DISTCC_PID" "DistCC running $JOBS workers..."
+    DISTCC_RUNNING=1
   fi
   return $RC
 }
@@ -186,25 +192,37 @@ function stop_distccd() {
   std_distccd --stop \
     --remove-pidfile \
     --user "$DISTCC_USER"
+  DISTCC_RUNNING=0
   return $?
 }
 
 
 function atexit() {
-  # Exit handler.
+  # Pre-exit handler.
   stty echoctl
 
   if [ "$DISTCC_TAIL_PID" -ne 0 ]; then
-    if [ $# -eq 1 ]; then
+    if [ $# -eq 1 -a "$1" -ne 0 ]; then
       SIG=$1
     else
       SIG=9
     fi
     kill -"$SIG" "$DISTCC_TAIL_PID"
+    DISTCC_TAIL_PID=0
   fi
 
-  stop_distccd
-  stop_cron
+  if [ "$DISTCC_RUNNING" -ne 0 ]; then
+    stop_distccd
+  fi
+
+  if [ "$CRON_RUNNING" -ne 0 ]; then
+    stop_cron
+  fi
+}
+
+function _exit() {
+  _syslog "_" $$ "Exit: $1"
+  exit $1
 }
 
 function sigint() {
@@ -214,7 +232,7 @@ function sigint() {
   echo "[!!!] SIGINT (^C) received! Shutting down..." >&2
   atexit 2
 
-  exit $((128 + 2))
+  _exit $((128 + 2))
 }
 
 function sighup() {
@@ -224,7 +242,7 @@ function sighup() {
   echo "[!!!] SIGHUP received! Shutting down..." >&2
   atexit 1
 
-  exit $((128 + 1))
+  _exit $((128 + 1))
 }
 
 
@@ -239,7 +257,7 @@ function custom_command() {
     _syslog "sudo" "" "root : COMMAND=$@"
     $@
   fi
-  RETURN_CODE=$?
+  local RETURN_CODE=$?
   echo "[---] Custom command '$1' exited with '$RETURN_CODE'" >&2
   return $RETURN_CODE
 }
@@ -254,23 +272,22 @@ _check_init
 start_cron
 
 start_distccd
-DISTCC_RUNNING=$?
 if [ "$EXEC_CUSTOM" -eq 1 ]; then
-  if [ "$DISTCC_RUNNING" -eq 0 ]; then
+  if [ "$DISTCC_RUNNING" -ne 0 ]; then
     echo "[...] distcc service is running." >&2
   fi
 
   custom_command $@
   EXIT_CODE=$?
 
-  atexit $?
+  atexit
   _syslog "_" $$ "Shutting down..."
-  exit $EXIT_CODE
+  _exit $EXIT_CODE
 else
-  if [ "$DISTCC_RUNNING" -ne 0 ]; then
-    stop_cron
+  if [ "$DISTCC_RUNNING" -eq 0 ]; then
+    atexit
     _syslog "_" $$ "Shutting down..."
-    exit 1
+    _exit 1
   fi
 fi
 
@@ -287,7 +304,7 @@ stty -echoctl
 
 # Just keep the main script alive as long as the DistCC server is alive...
 su --pty --login "$DISTCC_USER" --command \
-  "tail -f /dev/null --pid $(cat "$DISTCC_PIDF")" 2>/dev/null & \
+  "tail -f /var/log/distccd.log --pid $(cat "$DISTCC_PIDF")" 2>/dev/null & \
 DISTCC_TAIL_PID=$!
 wait $DISTCC_TAIL_PID
 
@@ -300,4 +317,4 @@ sleep 1
 atexit 15
 
 _syslog "_" $$ "Shutting down..."
-exit $((128 + 15))
+_exit $((128 + 15))
