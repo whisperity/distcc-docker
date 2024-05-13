@@ -9,6 +9,7 @@ DISTCC_PIDF="/run/distccd.pid"
 DISTCC_RUNNING=0
 DISTCC_USER="$(cat /var/lib/distcc/distcc.user)"
 DISTCC_TAIL_PID=0
+HAS_COMPILERS_INSTALLED_FILE="/var/lib/.distcc-compilers-done"
 SYSTEM_LOGF="/var/log/syslog"
 
 
@@ -102,6 +103,30 @@ function _check_init() {
   fi
 }
 
+function _check_and_install_compilers() {
+  # Check that the compilers had been installed into either the image, or at a
+  # previous start of the current container. If not, install them.
+
+  # _syslog "_" $$ "Checking for compilers..."
+  if [ ! -f "$HAS_COMPILERS_INSTALLED_FILE" ]; then
+    _syslog "_" $$ "Failed to find compilers. Installing..."
+
+    /usr/local/sbin/install-compilers.sh
+    local RC=$?
+
+    if [ $RC -ne 0 ]; then
+      _syslog "_" $$ "! Failed to install compilers after failed detection"
+      echo "[!!!] ALERT! This container did not succeed installing compilers!" >&2
+      echo "        The DistCC service will not be appropriately usable!" >&2
+
+      return $RC
+    fi
+  fi
+
+  # _syslog "_" $$ "Compilers are ready."
+  return 0
+}
+
 
 # Helper "system" daemons.
 function std_cron() {
@@ -166,7 +191,7 @@ function start_distccd() {
   fi
 
   # Wait for DistCC to start properly.
-  /usr/bin/wait-for \
+  /usr/local/bin/wait-for \
     --quiet \
     --timeout="$STARTUP_TIMEOUT" \
     "http://0.0.0.0:3633" \
@@ -221,7 +246,7 @@ function atexit() {
 }
 
 function _exit() {
-  _syslog "_" $$ "Exit: $1"
+  _syslog "_" $$ "Exit code: $1"
   exit $1
 }
 
@@ -269,6 +294,16 @@ EXIT_CODE=0
 echo "[>>>] DistCC LTS Docker worker container initialising..." >&2
 _check_init
 
+_check_and_install_compilers
+if [ $? -ne 0 -a "$EXEC_CUSTOM" -eq 0 ]; then
+  echo "[!!!] Shutting down: container is unusable in its current form!" >&2
+
+  atexit
+  _syslog "_" $$ "Shutting down" \
+    "(failed to install compilers, unusable container)..."
+  _exit $EXIT_CODE
+fi
+
 start_cron
 
 start_distccd
@@ -281,12 +316,12 @@ if [ "$EXEC_CUSTOM" -eq 1 ]; then
   EXIT_CODE=$?
 
   atexit
-  _syslog "_" $$ "Shutting down..."
+  _syslog "_" $$ "Shutting down (custom command exited)..."
   _exit $EXIT_CODE
 else
   if [ "$DISTCC_RUNNING" -eq 0 ]; then
     atexit
-    _syslog "_" $$ "Shutting down..."
+    _syslog "_" $$ "Shutting down (distcc failed to start)..."
     _exit 1
   fi
 fi
@@ -304,7 +339,7 @@ stty -echoctl
 
 # Just keep the main script alive as long as the DistCC server is alive...
 su --pty --login "$DISTCC_USER" --command \
-  "tail -f /var/log/distccd.log --pid $(cat "$DISTCC_PIDF")" 2>/dev/null & \
+  "tail -f /var/log/distccd.log --pid $(cat "$DISTCC_PIDF")" 2>"/dev/null" & \
 DISTCC_TAIL_PID=$!
 wait $DISTCC_TAIL_PID
 
@@ -316,5 +351,5 @@ DISTCC_TAIL_PID=0
 sleep 1
 atexit 15
 
-_syslog "_" $$ "Shutting down..."
+_syslog "_" $$ "Shutting down (distcc exited)..."
 _exit $((128 + 15))
