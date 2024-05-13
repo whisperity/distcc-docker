@@ -55,6 +55,7 @@ RUN \
 ARG USERNAME="distcc"
 RUN echo "Creating service user: $USERNAME ..." >&2 && \
   mkdir -pv "/var/lib/distcc/" && \
+  chmod -Rv 755 "/var/lib/distcc" && \
   useradd "$USERNAME" \
     --system \
     --comment "DistCC service" \
@@ -62,7 +63,6 @@ RUN echo "Creating service user: $USERNAME ..." >&2 && \
     --home-dir "/var/lib/distcc/" && \
   cp -v "/root/.bashrc" "/root/.profile" "/var/lib/distcc/" && \
   chown -Rv "$USERNAME":"$USERNAME" "/var/lib/distcc" && \
-  chmod -Rv 755 "/var/lib/distcc" && \
   echo "$USERNAME" > "/var/lib/distcc/distcc.user" && \
   chmod -v 444 "/var/lib/distcc/distcc.user"
 

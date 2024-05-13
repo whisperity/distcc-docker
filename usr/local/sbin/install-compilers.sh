@@ -88,4 +88,5 @@ fi
 
 update-distcc-symlinks
 touch "$COMPILERS_INSTALLED_STAMP"
+chmod 444 "$COMPILERS_INSTALLED_STAMP"
 exit 0
