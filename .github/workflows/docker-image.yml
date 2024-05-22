@@ -1,0 +1,30 @@
+name: "Docker Image CI"
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    env:
+      RUNS_ON: "ubuntu-20.04"
+    runs-on: "ubuntu-20.04"
+    steps:
+      - name: "Build Docker Image"
+        uses: docker/build-push-action@v5
+        with:
+          load: true
+          tags: "distcc-docker:${{ env.RUNS_ON }}"
+      - name: "Simple test"
+        run: |
+          docker run \
+            --init \
+            --rm \
+            "distcc-docker:${{ env.RUNS_ON }}"
+            --jobs $(nproc) \
+            -- \
+            bash -c \
+              "ps fauxw; " \
+              "/usr/bin/ls -alh .; " \
+              "/usr/bin/ls -alh /var/log; " \
+              "cat /var/log/*;"

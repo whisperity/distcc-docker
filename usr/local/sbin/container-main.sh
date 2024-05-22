@@ -317,7 +317,7 @@ if [ "$EXEC_CUSTOM" -eq 1 ]; then
     echo "[...] distcc service is running." >&2
   fi
 
-  custom_command $@
+  custom_command "$@"
   EXIT_CODE=$?
 
   atexit

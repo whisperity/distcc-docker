@@ -32,13 +32,11 @@ ENV \
   LC_ALL="en_US.UTF-8"
 
 
-COPY etc/ /etc/
-COPY usr/ /usr/
-
-
 # Set to non-zero if the compilers should only be installed into the container,
 # and not immediately baked into the image itself.
 ARG LAZY_COMPILERS=0
+
+COPY usr/local/sbin/install-compilers.sh /usr/local/sbin/install-compilers.sh
 RUN \
   if [ "x$LAZY_COMPILERS" = "x0" ]; \
   then \
@@ -65,6 +63,10 @@ RUN echo "Creating service user: $USERNAME ..." >&2 && \
   chown -Rv "$USERNAME":"$USERNAME" "/var/lib/distcc" && \
   echo "$USERNAME" > "/var/lib/distcc/distcc.user" && \
   chmod -v 444 "/var/lib/distcc/distcc.user"
+
+
+COPY etc/ /etc/
+COPY usr/ /usr/
 
 
 # Expose the DistCC server's normal job and statistics subservice port.
