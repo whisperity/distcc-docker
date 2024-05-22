@@ -15,6 +15,9 @@ SYSTEM_LOGF="/var/log/syslog"
 
 # Arguments.
 JOBS="$(( $(nproc) - 2 ))"
+if [ $JOBS -le 0 ]; then
+   JOBS=1
+fi
 NICE=5
 STARTUP_TIMEOUT=30
 EXEC_CUSTOM=0
@@ -22,7 +25,7 @@ CUSTOM_AS_ROOT=0
 
 function usage() {
   echo "Usage:" >&2
-  echo "    <entrypoint> [-j J] [-n N] [command ...]" >&2
+  echo "    <entrypoint> [-j J] [-n N] [--startup-timeout S] [-- command ...]" >&2
   echo >&2
   echo "-j J | --jobs J             Run distcc server with J worker processes." >&2
   echo "                            Default: $JOBS" >&2
@@ -224,7 +227,9 @@ function stop_distccd() {
 
 function atexit() {
   # Pre-exit handler.
-  stty echoctl
+  if [ -t 1 ]; then
+    stty echoctl
+  fi
 
   if [ "$DISTCC_TAIL_PID" -ne 0 ]; then
     if [ $# -eq 1 -a "$1" -ne 0 ]; then
@@ -334,7 +339,9 @@ echo "[...] distcc service is running. SIGINT (^C) terminates." >&2
 trap sigint INT
 trap sighup HUP
 
-stty -echoctl
+if [ -t 1 ]; then
+  stty -echoctl
+fi
 
 
 # Just keep the main script alive as long as the DistCC server is alive...
