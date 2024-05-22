@@ -3,12 +3,19 @@ name: "Docker Image CI"
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      release:
+        type: boolean
+        description: "Release the built Docker image into 'ghcr.io'"
 
 jobs:
   build:
-    name: "Build Docker Image"
+    name: "Build ${{ github.event_name == 'workflow_dispatch' && inputs.release && 'and Deploy' || '' }} Docker Image"
     env:
       RUNS_ON: "ubuntu-20.04"
+    permissions:
+      packages: write
     runs-on: "ubuntu-20.04"
     steps:
       - name: "Build Docker Image"
@@ -26,3 +33,16 @@ jobs:
             -- \
             bash -c \
               "ps fauxw; /usr/bin/ls -alh .; /usr/bin/ls -alh /var/log; cat /var/log/*; exit;"
+      - name: "Log in to GitHub Container Registry (GHCR)"
+        if: "github.ref == 'refs/heads/master' && github.event_name == 'workflow_dispatch' && inputs.release"
+        uses: docker/login-action@v3
+        with:
+          registry: "ghcr.io"
+          username: "${{ github.actor }}"
+          password: "${{ secrets.GITHUB_TOKEN }}"
+      - name: "Upload image to GHCR"
+        if: "github.ref == 'refs/heads/master' && github.event_name == 'workflow_dispatch' && inputs.release"
+        uses: docker/build-push-action@v5
+        with:
+          push: true
+          tags: "ghcr.io/${{ github.actor }}/distcc-docker:${{ env.RUNS_ON }}"
