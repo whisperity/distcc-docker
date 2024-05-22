@@ -1,0 +1,20 @@
+name: "distcc"
+
+services:
+  distcc:
+    image: "ghcr.io/whisperity/distcc-docker:ubuntu-20.04"
+    init: true
+    restart: "unless-stopped"
+    ports:
+      - "3632:3632/tcp"
+      - "3633:3633/tcp"
+    volumes:
+      - type: tmpfs
+        target: "/tmp"
+        tmpfs:
+          mode: 1770
+          size: "8G"
+    # Specify
+    #     command: >
+    #       --jobs N
+    # to alter the number of workers available in the service.

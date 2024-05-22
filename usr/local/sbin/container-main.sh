@@ -296,7 +296,7 @@ function custom_command() {
 # Entry point.
 _syslog "_" $$ "Initialising..."
 EXIT_CODE=0
-echo "[>>>] DistCC LTS Docker worker container initialising..." >&2
+echo "[>>>] DistCC Docker worker container initialising..." >&2
 _check_init
 
 _check_and_install_compilers
