@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 FROM ubuntu:20.04
 MAINTAINER Whisperity <whisperity-packages@protonmail.com>
 
