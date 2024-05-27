@@ -2,7 +2,11 @@ name: "Docker Image CI"
 
 on:
   push:
+    paths-ignore:
+      - "**.md"
   pull_request:
+    paths-ignore:
+      - "**.md"
   workflow_dispatch:
     inputs:
       release:
@@ -10,16 +14,44 @@ on:
         description: "Release the built Docker image into 'ghcr.io'"
 
 jobs:
+  lint:
+    name: "Lint"
+    runs-on: "ubuntu-20.04"
+    steps:
+      - uses: "actions/checkout@v4"
+      - name: "Download ShellCheck"
+        uses: "robinraju/release-downloader@v1.10"
+        with:
+          repository: "koalaman/shellcheck"
+          tag: "v0.10.0"
+          filename: "shellcheck-v*.linux.x86_64.tar.xz"
+          tarBall: false
+          zipBall: false
+      - name: "Extract ShellCheck"
+        run: |
+          tar xvf ./shellcheck-v*.tar.xz
+          rm -v   ./shellcheck-v*.tar.xz
+          mv -v   ./shellcheck-v*/shellcheck "./shellcheck"
+          rm -rv  ./shellcheck-v*
+          ./shellcheck --version
+      - name: "ShellCheck"
+        run: |
+          ./shellcheck \
+            --color=always \
+            etc/cron.*/* \
+            usr/local/bin/* \
+            usr/local/sbin/*
+
   build:
     name: "Build ${{ github.event_name == 'workflow_dispatch' && inputs.release && 'and Deploy' || '' }} Docker Image"
     env:
       RUNS_ON: "ubuntu-20.04"
     permissions:
-      packages: write
+      packages: "write"
     runs-on: "ubuntu-20.04"
     steps:
       - name: "Build Docker Image"
-        uses: docker/build-push-action@v5
+        uses: "docker/build-push-action@v5"
         with:
           load: true
           tags: "distcc-docker:${{ env.RUNS_ON }}"
@@ -35,14 +67,14 @@ jobs:
               "ps fauxw; /usr/bin/ls -alh .; /usr/bin/ls -alh /var/log; cat /var/log/*; exit;"
       - name: "Log in to GitHub Container Registry (GHCR)"
         if: "github.ref == 'refs/heads/master' && github.event_name == 'workflow_dispatch' && inputs.release"
-        uses: docker/login-action@v3
+        uses: "docker/login-action@v3"
         with:
           registry: "ghcr.io"
           username: "${{ github.actor }}"
           password: "${{ secrets.GITHUB_TOKEN }}"
       - name: "Upload image to GHCR"
         if: "github.ref == 'refs/heads/master' && github.event_name == 'workflow_dispatch' && inputs.release"
-        uses: docker/build-push-action@v5
+        uses: "docker/build-push-action@v5"
         with:
           push: true
           tags: "ghcr.io/${{ github.actor }}/distcc-docker:${{ env.RUNS_ON }}"
