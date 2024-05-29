@@ -39,8 +39,7 @@ jobs:
           ./shellcheck \
             --color=always \
             etc/cron.*/* \
-            usr/local/bin/* \
-            usr/local/sbin/*
+            usr/local/*bin/*
 
   build:
     name: "Build ${{ github.event_name == 'workflow_dispatch' && inputs.release && 'and Deploy' || '' }} Docker Image"

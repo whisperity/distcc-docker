@@ -52,13 +52,12 @@ if [[ "$OS_RELEASE" == "focal" ]]; then
   echo "deb [signed-by=/etc/apt/keyrings/ubuntu-toolchain-r.gpg]" \
     "http://ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu/ focal main" \
     > "/etc/apt/sources.list.d/ubuntu-toolchain-r-ubuntu-test-focal.list"
-  MISSING_KEYS_FILE="$(mktemp -p $INSTALL_TMPDIR)"
+  MISSING_KEYS_FILE="$(mktemp -p "$INSTALL_TMPDIR")"
   apt-get update -y \
     >>/dev/null \
     2>"$MISSING_KEYS_FILE" \
     || true
-  KEY="$(cat $MISSING_KEYS_FILE \
-    | grep "NO_PUBKEY" \
+  KEY="$(grep "NO_PUBKEY" "$MISSING_KEYS_FILE" \
     | cut -d ':' -f 6 \
     | cut -d ' ' -f 3)"
   apt-key adv --keyserver "hkp://keyserver.ubuntu.com:80" --recv-keys "$KEY"

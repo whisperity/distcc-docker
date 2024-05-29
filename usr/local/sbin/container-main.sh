@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: MIT
 #
 # main() of the container.
+#
+# shellcheck disable=SC2317
 
 CRON_RUNNING=0
 DISTCC_LOGF="/var/log/distccd.log"
@@ -24,19 +26,21 @@ EXEC_CUSTOM=0
 CUSTOM_AS_ROOT=0
 
 function usage() {
-  echo "Usage:" >&2
-  echo "    <entrypoint> [-j J] [-n N] [--startup-timeout S] [-- command ...]" >&2
-  echo >&2
-  echo "-j J | --jobs J             Run distcc server with J worker processes." >&2
-  echo "                            Default: $JOBS" >&2
-  echo "-n J | --nice N             Run distcc server with extra N ninceness." >&2
-  echo "                            Default: $NICE" >&2
-  echo "--startup-timeout S         Wait S seconds for the server to start." >&2
-  echo "                            Default: $STARTUP_TIMEOUT" >&2
-  echo >&2
-  echo "-- COMMAND ...              Execute COMMAND, e.g., a shell, with the " >&2
-  echo "                            given following arguments after 'distcc' " >&2
-  echo "                            has initialised. " >&2
+  cat <<USAGE >&2
+Usage:
+  <entrypoint> [-j J] [-n N] [--startup-timeout S] [-- command ...]
+
+  -j J | --jobs J             Run distcc server with J worker processes.
+                              Default: $JOBS
+  -n J | --nice N             Run distcc server with extra N ninceness.
+                              Default: $NICE
+  --startup-timeout S         Wait S seconds for the server to start.
+                              Default: $STARTUP_TIMEOUT
+
+  -- COMMAND ...              Execute COMMAND, e.g., a shell, with the
+                              given following arguments after 'distcc'
+                              has initialised.
+USAGE
 }
 
 
@@ -79,7 +83,7 @@ done
 
 function _syslog() {
   echo -n "$(date +"%b %_d %H:%M:%S") $(hostname) $1" >> "$SYSTEM_LOGF"
-  if [ ! -z "$2" ]; then
+  if [ -n "$2" ]; then
     echo -n "[$2]" >> "$SYSTEM_LOGF"
   fi
   echo -n ": " >> "$SYSTEM_LOGF"
@@ -92,7 +96,10 @@ function _syslog() {
 
 function _check_init() {
   # Check init system sanity.
+
+  # shellcheck disable=SC2009
   ps 1 | grep "docker-init" &>/dev/null
+  # shellcheck disable=SC2181
   if [ $? -ne 0 ]; then
     echo "[!!!] ALERT! This container is expected to be run with" \
       "'docker run --init'!" >&2
@@ -136,7 +143,7 @@ function std_cron() {
   start-stop-daemon \
     --pidfile "/run/crond.pid" \
     --exec "$(which cron)" \
-    $@
+    "$@"
   return $?
 }
 
@@ -161,7 +168,7 @@ function stop_cron() {
 function std_distccd() {
   start-stop-daemon \
     --pidfile "$DISTCC_PIDF" \
-    $@
+    "$@"
   return $?
 }
 
@@ -194,7 +201,7 @@ function start_distccd() {
   fi
 
   # Wait for DistCC to start properly.
-  /usr/local/bin/wait-for \
+  /usr/local/libexec/wait-for \
     --quiet \
     --timeout="$STARTUP_TIMEOUT" \
     "http://0.0.0.0:3633" \
@@ -206,7 +213,9 @@ function start_distccd() {
     _syslog "_" $$ "DistCC daemon failed to start!"
     DISTCC_RUNNING=0
   else
-    local DISTCC_PID="$(cat $DISTCC_PIDF)"
+    local DISTCC_PID
+    DISTCC_PID="$(cat $DISTCC_PIDF)"
+
     _syslog "distccd" "$DISTCC_PID" "DistCC daemon started."
     _syslog "distccd" "$DISTCC_PID" "DistCC running $JOBS workers..."
     DISTCC_RUNNING=1
@@ -232,7 +241,7 @@ function atexit() {
   fi
 
   if [ "$DISTCC_TAIL_PID" -ne 0 ]; then
-    if [ $# -eq 1 -a "$1" -ne 0 ]; then
+    if [ $# -eq 1 ] && [ "$1" -ne 0 ]; then
       SIG=$1
     else
       SIG=9
@@ -252,7 +261,7 @@ function atexit() {
 
 function _exit() {
   _syslog "_" $$ "Exit code: $1"
-  exit $1
+  exit "$1"
 }
 
 function sigint() {
@@ -281,11 +290,11 @@ function custom_command() {
   echo "[+++] Executing '$1'..." >&2
   echo "[!!!] WARNING: When it terminates, the entire container WILL die!" >&2
   if [ "$CUSTOM_AS_ROOT" -eq 0 ]; then
-    _syslog "sudo" "" "$DISTCC_USER : COMMAND=$@"
+    _syslog "sudo" "" "$DISTCC_USER : COMMAND=$*"
     su --pty --login "$DISTCC_USER" --command "$@"
   else
-    _syslog "sudo" "" "root : COMMAND=$@"
-    $@
+    _syslog "sudo" "" "root : COMMAND=$*"
+    "$@"
   fi
   local RETURN_CODE=$?
   echo "[---] Custom command '$1' exited with '$RETURN_CODE'" >&2
@@ -300,7 +309,8 @@ echo "[>>>] DistCC Docker worker container initialising..." >&2
 _check_init
 
 _check_and_install_compilers
-if [ $? -ne 0 -a "$EXEC_CUSTOM" -eq 0 ]; then
+# shellcheck disable=SC2181
+if [ $? -ne 0 ] && [ "$EXEC_CUSTOM" -eq 0 ]; then
   echo "[!!!] Shutting down: container is unusable in its current form!" >&2
 
   atexit
