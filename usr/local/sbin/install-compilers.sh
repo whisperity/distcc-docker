@@ -42,6 +42,7 @@ if [[ "$OS_RELEASE" == "focal" ]]; then
   wget -O- https://apt.llvm.org/llvm-snapshot.gpg.key \
     | gpg --dearmor \
     > "/etc/apt/keyrings/llvm-snapshot.gpg"
+  rm -fv "$HOME/.wget-hsts"
   echo "deb [signed-by=/etc/apt/keyrings/llvm-snapshot.gpg]" \
     "http://apt.llvm.org/focal/ llvm-toolchain-focal-14 main" \
     > "/etc/apt/sources.list.d/apt-llvm-org-focal-llvm-toolchain-focal-14.list"
