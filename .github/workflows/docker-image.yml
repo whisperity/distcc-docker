@@ -34,12 +34,20 @@ jobs:
           mv -v   ./shellcheck-v*/shellcheck "./shellcheck"
           rm -rv  ./shellcheck-v*
           ./shellcheck --version
+      - name: "Install PyCodeStyle"
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            python3-pycodestyle
       - name: "ShellCheck"
         run: |
           ./shellcheck \
             --color=always \
             etc/cron.*/* \
             usr/local/*bin/*
+      - name: "PyCodeStyle"
+        run: |
+          python3 -m pycodestyle \
+            .
 
   build:
     name: "Build ${{ github.event_name == 'workflow_dispatch' && inputs.release && 'and Deploy' || '' }} Docker Image"
@@ -54,16 +62,87 @@ jobs:
         with:
           load: true
           tags: "distcc-docker:${{ env.RUNS_ON }}"
-      - name: "Simple test"
+      - name: "Test starting the container"
         run: |
           docker run \
             --init \
             --rm \
             "distcc-docker:${{ env.RUNS_ON }}" \
-            --jobs $(nproc) \
-            -- \
-            bash -c \
-              "set -x; ps fauxw; /usr/bin/ls -alh .; /usr/bin/ls -alh /var/log; cat /var/log/*; exit;"
+              --jobs $(nproc) \
+              -- \
+              bash -c \
+                "set -x; ps fauxw; /usr/bin/ls -alh .; /usr/bin/ls -alh /var/log; cat /var/log/*; exit;"
+      - name: "Test that \"dcc_free_mem\" is reported"
+        run: |
+          set -ex
+
+          docker run \
+            --detach \
+            --init \
+            --name "distcc-1" \
+            --publish "3632:3632/tcp" \
+            --publish "3633:3633/tcp" \
+            --rm \
+            "distcc-docker:${{ env.RUNS_ON }}" \
+              --jobs $(nproc) \
+              -- \
+                bash -c "set -x; sleep 120; exit;"
+
+          sleep 10
+          STAT_RESULT="$(curl "http://localhost:3633" | grep "dcc_free_mem")"
+          if [ -z "$STAT_RESULT" ]; then
+            echo "Server did not report 'dcc_free_mem'!" >&2
+            exit 1
+          fi
+
+          docker kill "distcc-1"
+      - name: "Test compilation in the container"
+        run: |
+          set -ex
+
+          sudo apt-get update -y
+          sudo apt-get install distcc g++ --no-install-recommends
+          sudo update-distcc-symlinks
+
+          docker run \
+            --detach \
+            --init \
+            --name "distcc-1" \
+            --publish "3632:3632/tcp" \
+            --publish "3633:3633/tcp" \
+            --rm \
+            "distcc-docker:${{ env.RUNS_ON }}" \
+              --jobs $(nproc) \
+              -- \
+                bash -c "set -x; sleep 120; exit;"
+
+          sleep 10
+          curl "http://localhost:3633"
+
+          echo "int main() { return MY_EXIT_CODE; }" >> main.cpp
+
+          DISTCC_HOSTS="127.0.0.1:3632/$(nproc),lzo" \
+            distcc /usr/bin/g++ \
+            -D MY_EXIT_CODE=42 \
+            -c \
+            ./main.cpp \
+            -o main.o
+
+          rm -v main.cpp
+
+          curl "http://localhost:3633" | grep "dcc_compile_ok 1"
+
+          docker kill "distcc-1"
+
+          /usr/bin/g++ main.o -o main
+
+          set +e
+
+          ./main
+          if [ "$?" -ne 42 ]; then
+            echo "Unexpected error code obtained!" >&2
+            exit 1
+          fi
       - name: "Log in to GitHub Container Registry (GHCR)"
         if: "github.ref == 'refs/heads/master' && github.event_name == 'workflow_dispatch' && inputs.release"
         uses: "docker/login-action@v3"
