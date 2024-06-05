@@ -16,23 +16,24 @@ The easiest way to obtain a running container with the default and suggested con
 docker-compose up --detach
 ```
 
-
-For **Ubuntu 20.04 "Focal Fossa" LTS** host computers, it is very likely that a newer version of _Docker Compose_ is needed first:
-
-
-```bash
-wget http://github.com/docker/compose/releases/download/v2.27.0/docker-compose-linux-x86_64
-sudo mv ./docker-compose-linux_x86_64 /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
-```
+> [!IMPORTANT]
+>
+> For **Ubuntu 20.04 "Focal Fossa" LTS** host computers, it is very likely that a newer version of _Docker Compose_ is needed first:
+>
+>
+> ```bash
+> wget "http://github.com/docker/compose/releases/download/v2.27.0/docker-compose-linux-x86_64"
+> sudo mv "./docker-compose-linux_x86_64" "/usr/local/bin/docker-compose"
+> sudo chmod +x "/usr/local/bin/docker-compose"
+> ```
 
 
 
 ### Downloading or building the image
 
-The image is available in the [GitHub Container Registry](http://ghcr.io) under [`whisperity/distcc-docker`](http://github.com/whisperity/distcc-docker/pkgs/container/distcc-docker).
+The image is available in the [**GitHub Container Registry**](http://ghcr.io) under [`whisperity/distcc-docker`](http://github.com/whisperity/distcc-docker/pkgs/container/distcc-docker).
 
-Alternatively, you can build the image yourself locally:
+Alternatively, you can build the image yourself locally after cloning the repository:
 
 
 ```bash
@@ -42,14 +43,14 @@ docker build \
 ```
 
 
-By default, the building of the image will install the necessary and available compiler versions for best support.
+By default, the build process of the image will install the necessary and available compiler versions for best support.
 In case a smaller image is deemed necessary, pass `--build-arg="LAZY_COMPILERS=1"`.
-The resulting image will install the curated list of compilers **at the first start** of the container, without occupying space in the _image_.
+If passed, the resulting image will install the curated list of compilers **at the first start** of the container, without occupying space in the _image_.
 However, this will increase the network use and the initial deployment time of the containers.
 
 
 
-### Setting up the workers
+### Setting up the worker
 
 Alternatively, you can start the container manually, with the following arguments.
 The running container will act as the master DistCC daemon of the host computer, listening on the _default_ ports `3632` and `3633`.
@@ -59,10 +60,10 @@ The running container will act as the master DistCC daemon of the host computer,
 docker run  \
   --detach \
   --init \
+  --mount type=tmpfs,destination=/tmp,tmpfs-mode=1770,tmpfs-size=8G \
   --publish 3632:3632/tcp \
   --publish 3633:3633/tcp \
   --restart unless-stopped \
-  --mount type=tmpfs,destination=/tmp,tmpfs-mode=1770,tmpfs-size=8G \
   ghcr.io/whisperity/distcc-docker:ubuntu-20.04
 ```
 
