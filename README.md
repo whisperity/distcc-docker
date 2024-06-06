@@ -23,7 +23,7 @@ docker-compose up --detach
 >
 > ```bash
 > wget "http://github.com/docker/compose/releases/download/v2.27.0/docker-compose-linux-x86_64"
-> sudo mv "./docker-compose-linux_x86_64" "/usr/local/bin/docker-compose"
+> sudo mv "./docker-compose-linux-x86_64" "/usr/local/bin/docker-compose"
 > sudo chmod +x "/usr/local/bin/docker-compose"
 > ```
 
