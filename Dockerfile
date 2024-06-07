@@ -21,7 +21,10 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
   apt-get clean && \
   rm -rf "/var/lib/apt/lists/" && \
   rm -rf "/var/log/" && \
-  mkdir -pv "/var/log/"
+  mkdir -pv "/var/log/" && \
+  chmod -v -x \
+    "/etc/cron.daily/apt-compat" \
+    "/etc/cron.daily/dpkg"
 
 
 RUN export DEBIAN_FRONTEND=noninteractive; \
