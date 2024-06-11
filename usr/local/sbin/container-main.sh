@@ -5,13 +5,21 @@
 #
 # shellcheck disable=SC2317
 
+CRON_PIDF="/run/crond.pid"
 CRON_RUNNING=0
-DISTCC_LOGF="/var/log/distccd.log"
-DISTCC_PIDF="/run/distccd.pid"
-DISTCC_RUNNING=0
+DISTCCD_LOGF="/var/log/distccd.log"
+DISTCCD_PIDF="/run/distccd.pid"
+DISTCCD_PORT=3632
+DISTCCD_PORT_STATS=3634
+DISTCCD_STATS_HACK_PIDF="/run/distccd-dcc_free_mem.pid"
+DISTCCD_STATS_HACK_ACCESS_LOG="/var/log/access.log"
+DISTCCD_STATS_HACK_ERROR_LOG="/var/log/error.log"
+DISTCCD_STATS_HACK_PORT=3633
+DISTCCD_STATS_HACK_RUNNING=0
+DISTCCD_RUNNING=0
+DISTCCD_TAIL_PID=0
 DISTCC_USER="$(cat /var/lib/distcc/distcc.user)"
-DISTCC_TAIL_PID=0
-HAS_COMPILERS_INSTALLED_FILE="/var/lib/.distcc-compilers-done"
+HAS_COMPILERS_INSTALLED_FILE="/var/lib/distcc-compilers-done"
 SYSTEM_LOGF="/var/log/syslog"
 
 
@@ -32,7 +40,7 @@ Usage:
 
   -j J | --jobs J             Run distcc server with J worker processes.
                               Default: $JOBS
-  -n J | --nice N             Run distcc server with extra N ninceness.
+  -n J | --nice N             Run distcc server with extra N niceness.
                               Default: $NICE
   --startup-timeout S         Wait S seconds for the server to start.
                               Default: $STARTUP_TIMEOUT
@@ -46,10 +54,10 @@ USAGE
 
 # "getopt".
 while [ $# -gt 0 ]; do
-  OPT="$1"
+  opt="$1"
   shift 1
 
-  case "$OPT" in
+  case "$opt" in
     --help|-h)
       usage
       exit 0
@@ -74,7 +82,7 @@ while [ $# -gt 0 ]; do
       break
       ;;
     *)
-      echo "ERROR: Unexpected argument: '$OPT'" >&2
+      echo "ERROR: Unexpected argument: '$opt'" >&2
       exit 2
       ;;
   esac
@@ -122,14 +130,15 @@ function _check_and_install_compilers() {
     _syslog "_" $$ "Failed to find compilers. Installing..."
 
     /usr/local/sbin/install-compilers.sh
-    local RC=$?
+    local -ri rc=$?
 
-    if [ $RC -ne 0 ]; then
+    if [ $rc -ne 0 ]; then
       _syslog "_" $$ "! Failed to install compilers after failed detection"
-      echo "[!!!] ALERT! This container did not succeed installing compilers!" >&2
+      echo "[!!!] ALERT! This container did not succeed installing" \
+        "compilers!" >&2
       echo "        The DistCC service will not be appropriately usable!" >&2
 
-      return $RC
+      return $rc
     fi
   fi
 
@@ -141,8 +150,9 @@ function _check_and_install_compilers() {
 # Helper "system" daemons.
 function std_cron() {
   start-stop-daemon \
-    --pidfile "/run/crond.pid" \
+    --verbose \
     --exec "$(which cron)" \
+    --pidfile "$CRON_PIDF" \
     "$@"
   return $?
 }
@@ -150,14 +160,14 @@ function std_cron() {
 function start_cron() {
   echo "[+++] Starting cron..." >&2
   std_cron --start
-  _syslog "cron" "$(cat "/run/crond.pid")" "Cron daemon started."
+  _syslog "cron" "$(cat "$CRON_PIDF")" "Cron daemon started."
   CRON_RUNNING=1
   return $?
 }
 
 function stop_cron() {
   echo "[---] Stopping cron..." >&2
-  _syslog "cron" "$(cat "/run/crond.pid")" "Cron daemon stopping..."
+  _syslog "cron" "$(cat "$CRON_PIDF")" "Cron daemon stopping..."
   std_cron --stop
   CRON_RUNNING=0
   return $?
@@ -167,69 +177,150 @@ function stop_cron() {
 # DistCC service daemon.
 function std_distccd() {
   start-stop-daemon \
-    --pidfile "$DISTCC_PIDF" \
+    --verbose \
+    --pidfile "$DISTCCD_PIDF" \
     "$@"
   return $?
 }
 
 function start_distccd() {
   # Start the DistCC server normally.
-  echo "[+++] Starting distcc..." >&2
+  echo "[+++] Starting distccd..." >&2
 
-  touch "$DISTCC_LOGF" "$DISTCC_PIDF"
-  chown "$DISTCC_USER":"$DISTCC_USER" "$DISTCC_LOGF" "$DISTCC_PIDF"
-  chmod 0644 "$DISTCC_LOGF" "$DISTCC_PIDF"
+  touch "$DISTCCD_LOGF" "$DISTCCD_PIDF"
+  chown "$DISTCC_USER":"$DISTCC_USER" "$DISTCCD_LOGF" "$DISTCCD_PIDF"
+  chmod 0644 "$DISTCCD_LOGF" "$DISTCCD_PIDF"
 
-  start-stop-daemon --start \
+  start-stop-daemon \
+    --verbose \
+    --start \
     --exec "$(which distccd)" \
     -- \
       --daemon \
       --user "$DISTCC_USER" \
-      --listen "0.0.0.0" \
       --allow "0.0.0.0/0" \
-      --port "3632" \
+      --listen "0.0.0.0" \
+      --log-file "$DISTCCD_LOGF" \
+      --log-level info \
       --jobs "$JOBS" \
       --nice "$NICE" \
+      --pid-file "$DISTCCD_PIDF" \
+      --port "$DISTCCD_PORT" \
       --stats \
-      --stats-port "3633" \
-      --pid-file "$DISTCC_PIDF" \
-      --log-file "$DISTCC_LOGF" \
-      --log-level info
-  local RC=$?
-  if [ $RC -ne 0 ]; then
-    return $RC
+      --stats-port "$DISTCCD_PORT_STATS"
+  local -i rc=$?
+  if [ "$rc" -ne 0 ]; then
+    return $rc
   fi
 
   # Wait for DistCC to start properly.
   /usr/local/libexec/wait-for \
     --quiet \
     --timeout="$STARTUP_TIMEOUT" \
-    "http://0.0.0.0:3633" \
+    "http://0.0.0.0:$DISTCCD_PORT_STATS" \
     -- \
-      echo "[^:)] distcc up!" >&2
-  RC=$?
-  if [ "$RC" -ne 0 ]; then
-    echo "[:'(] distcc failed to start after $STARTUP_TIMEOUT seconds!" >&2
+      echo "[^:)] distccd up!" >&2
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "[:'(] distccd failed to start after $STARTUP_TIMEOUT seconds!" >&2
     _syslog "_" $$ "DistCC daemon failed to start!"
-    DISTCC_RUNNING=0
+    DISTCCD_RUNNING=0
   else
-    local DISTCC_PID
-    DISTCC_PID="$(cat $DISTCC_PIDF)"
+    local -i distccd_pid
+    distccd_pid="$(cat $DISTCCD_PIDF)"
 
-    _syslog "distccd" "$DISTCC_PID" "DistCC daemon started."
-    _syslog "distccd" "$DISTCC_PID" "DistCC running $JOBS workers..."
-    DISTCC_RUNNING=1
+    _syslog "distccd" "$distccd_pid" "DistCC daemon started."
+    _syslog "distccd" "$distccd_pid" "DistCC running $JOBS workers..."
+    DISTCCD_RUNNING=1
   fi
-  return $RC
+  return $rc
 }
 
 function stop_distccd() {
-  echo "[---] Stopping distcc..." >&2
-  _syslog "distccd" "$(cat $DISTCC_PIDF)" "DistCC daemon stopping..."
-  std_distccd --stop \
+  echo "[---] Stopping distccd..." >&2
+  _syslog "distccd" "$(cat "$DISTCCD_PIDF")" "DistCC daemon stopping..."
+  std_distccd \
+    --stop \
     --remove-pidfile \
     --user "$DISTCC_USER"
-  DISTCC_RUNNING=0
+  DISTCCD_RUNNING=0
+  return $?
+}
+
+
+# DistCC --stats "dcc_free_mem" hack response transformer daemon.
+function std_distccd_dcc_free_mem() {
+  start-stop-daemon \
+    --verbose \
+    --pidfile "$DISTCCD_STATS_HACK_PIDF" \
+    "$@"
+  return $?
+}
+
+function start_distccd_free_mem_server() {
+  # Start the DistCC server free memory reporting transformer.
+  echo "[+++] Starting distccd dcc_free_mem ..." >&2
+
+  touch "$DISTCCD_STATS_HACK_ACCESS_LOG" "$DISTCCD_STATS_HACK_ERROR_LOG" \
+    "$DISTCCD_STATS_HACK_PIDF"
+  chown "$DISTCC_USER":"$DISTCC_USER" \
+    "$DISTCCD_STATS_HACK_ACCESS_LOG" "$DISTCCD_STATS_HACK_ERROR_LOG" \
+    "$DISTCCD_STATS_HACK_PIDF"
+  chmod 0644 \
+    "$DISTCCD_STATS_HACK_ACCESS_LOG" "$DISTCCD_STATS_HACK_ERROR_LOG" \
+    "$DISTCCD_STATS_HACK_PIDF"
+
+  std_distccd_dcc_free_mem \
+    --start \
+    --background \
+    --chuid "$DISTCC_USER" \
+    --exec "$(which python3)" \
+    --make-pidfile \
+    -- \
+      "/usr/local/share/dcc_free_mem/stat_server.py" \
+        --access-log "$DISTCCD_STATS_HACK_ACCESS_LOG" \
+        --error-log "$DISTCCD_STATS_HACK_ERROR_LOG" \
+        --system-log "$SYSTEM_LOGF" \
+        "$DISTCCD_STATS_HACK_PORT" \
+        "$DISTCCD_PORT_STATS"
+  local -i rc=$?
+  if [ "$rc" -ne 0 ]; then
+    return $rc
+  fi
+
+  # Wait for DistCC to start properly.
+  /usr/local/libexec/wait-for \
+    --quiet \
+    --timeout="$STARTUP_TIMEOUT" \
+    "http://0.0.0.0:$DISTCCD_STATS_HACK_PORT" \
+    -- \
+      echo "[^:)] distccd dcc_free_mem up!" >&2
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "[:'(] distccd dcc_free_mem failed to start after" \
+      "$STARTUP_TIMEOUT seconds!" >&2
+    _syslog "_" $$ "DistCC dcc_free_mem failed to start!"
+    DISTCCD_STATS_HACK_RUNNING=0
+  else
+    local distccd_free_mem_pid
+    distccd_free_mem_pid="$(cat "$DISTCCD_STATS_HACK_PIDF")"
+
+    _syslog "distccd-dcc_free_mem" "$distccd_free_mem_pid" \
+      "DistCC dcc_free_mem started."
+    DISTCCD_STATS_HACK_RUNNING=1
+  fi
+  return $rc
+}
+
+function stop_distccd_dcc_free_mem() {
+  echo "[---] Stopping distccd dcc_free_mem ..." >&2
+  _syslog "distccd-dcc_free_mem" "$(cat "$DISTCCD_STATS_HACK_PIDF")" \
+    "DistCC dcc_free_mem stopping..."
+  std_distccd_dcc_free_mem \
+    --stop \
+    --remove-pidfile \
+    --user "$DISTCC_USER"
+  DISTCCD_STATS_HACK_RUNNING=0
   return $?
 }
 
@@ -240,17 +331,22 @@ function atexit() {
     stty echoctl
   fi
 
-  if [ "$DISTCC_TAIL_PID" -ne 0 ]; then
+  local -i sig
+  if [ "$DISTCCD_TAIL_PID" -ne 0 ]; then
     if [ $# -eq 1 ] && [ "$1" -ne 0 ]; then
-      SIG=$1
+      sig=$1
     else
-      SIG=9
+      sig=9
     fi
-    kill -"$SIG" "$DISTCC_TAIL_PID"
-    DISTCC_TAIL_PID=0
+    kill -"$sig" "$DISTCCD_TAIL_PID"
+    DISTCCD_TAIL_PID=0
   fi
 
-  if [ "$DISTCC_RUNNING" -ne 0 ]; then
+  if [ "$DISTCCD_STATS_HACK_RUNNING" -ne 0 ]; then
+    stop_distccd_dcc_free_mem
+  fi
+
+  if [ "$DISTCCD_RUNNING" -ne 0 ]; then
     stop_distccd
   fi
 
@@ -296,9 +392,9 @@ function custom_command() {
     _syslog "sudo" "" "root : COMMAND=$*"
     "$@"
   fi
-  local RETURN_CODE=$?
-  echo "[---] Custom command '$1' exited with '$RETURN_CODE'" >&2
-  return $RETURN_CODE
+  local -ri rc=$?
+  echo "[---] Custom command '$1' exited with '$rc'" >&2
+  return $rc
 }
 
 
@@ -322,9 +418,13 @@ fi
 start_cron
 
 start_distccd
+start_distccd_free_mem_server
 if [ "$EXEC_CUSTOM" -eq 1 ]; then
-  if [ "$DISTCC_RUNNING" -ne 0 ]; then
-    echo "[...] distcc service is running." >&2
+  if [ "$DISTCCD_RUNNING" -ne 0 ]; then
+    echo "[...] distccd service is running." >&2
+  fi
+  if [ "$DISTCCD_STATS_HACK_RUNNING" -ne 0 ]; then
+    echo "[...] distccd dcc_free_mem is running." >&2
   fi
 
   custom_command "$@"
@@ -334,7 +434,8 @@ if [ "$EXEC_CUSTOM" -eq 1 ]; then
   _syslog "_" $$ "Shutting down (custom command exited)..."
   _exit $EXIT_CODE
 else
-  if [ "$DISTCC_RUNNING" -eq 0 ]; then
+  if [ "$DISTCCD_RUNNING" -eq 0 ] \
+      || [ "$DISTCCD_STATS_HACK_RUNNING" -eq 0 ]; then
     atexit
     _syslog "_" $$ "Shutting down (distcc failed to start)..."
     _exit 1
@@ -356,14 +457,14 @@ fi
 
 # Just keep the main script alive as long as the DistCC server is alive...
 su --pty --login "$DISTCC_USER" --command \
-  "tail -f /var/log/distccd.log --pid $(cat "$DISTCC_PIDF")" 2>"/dev/null" & \
-DISTCC_TAIL_PID=$!
-wait $DISTCC_TAIL_PID
+  "tail -f /var/log/distccd.log --pid $(cat "$DISTCCD_PIDF")" 2>"/dev/null" & \
+DISTCCD_TAIL_PID=$!
+wait $DISTCCD_TAIL_PID
 
 
 # Do something loud if the process has terminated "organically".
 echo "[!!!] distcc service process terminated!" >&2
-DISTCC_TAIL_PID=0
+DISTCCD_TAIL_PID=0
 
 sleep 1
 atexit 15

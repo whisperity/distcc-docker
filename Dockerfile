@@ -4,7 +4,8 @@ FROM ubuntu:20.04
 MAINTAINER Whisperity <whisperity-packages@protonmail.com>
 
 
-RUN export DEBIAN_FRONTEND=noninteractive && \
+RUN \
+  export DEBIAN_FRONTEND=noninteractive && \
   set -x && \
   apt-get update -y && \
   apt-get install -y --no-install-recommends \
@@ -15,6 +16,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     lsb-release \
     locales \
     logrotate \
+    python3 \
     wget \
   && \
   apt-get purge -y --auto-remove && \
@@ -27,7 +29,8 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     "/etc/cron.daily/dpkg"
 
 
-RUN export DEBIAN_FRONTEND=noninteractive; \
+RUN \
+  export DEBIAN_FRONTEND=noninteractive; \
   sed -i -e "s/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/" "/etc/locale.gen" && \
   dpkg-reconfigure --frontend=noninteractive locales && \
   update-locale LANG="en_US.UTF-8"
@@ -37,11 +40,11 @@ ENV \
   LC_ALL="en_US.UTF-8"
 
 
+COPY usr/local/sbin/install-compilers.sh /usr/local/sbin/install-compilers.sh
+
 # Set to non-zero if the compilers should only be installed into the container,
 # and not immediately baked into the image itself.
 ARG LAZY_COMPILERS=0
-
-COPY usr/local/sbin/install-compilers.sh /usr/local/sbin/install-compilers.sh
 RUN \
   if [ "x$LAZY_COMPILERS" = "x0" ]; \
   then \
@@ -55,23 +58,24 @@ RUN \
   fi
 
 
+COPY etc/ /etc/
+COPY usr/ /usr/
+
+
 ARG USERNAME="distcc"
-RUN echo "Creating service user: $USERNAME ..." >&2 && \
-  mkdir -pv "/var/lib/distcc/" && \
-  chmod -Rv 755 "/var/lib/distcc" && \
+RUN \
+  cp -av "/etc/skel/." "/root/" && \
+  echo "Creating service user: $USERNAME ..." >&2 && \
   useradd "$USERNAME" \
-    --system \
+    --create-home \
     --comment "DistCC service" \
+    --home-dir "/var/lib/distcc/" \
     --shell "/bin/bash" \
-    --home-dir "/var/lib/distcc/" && \
-  cp -v "/root/.bashrc" "/root/.profile" "/var/lib/distcc/" && \
+    --system \
+    && \
   chown -Rv "$USERNAME":"$USERNAME" "/var/lib/distcc" && \
   echo "$USERNAME" > "/var/lib/distcc/distcc.user" && \
   chmod -v 444 "/var/lib/distcc/distcc.user"
-
-
-COPY etc/ /etc/
-COPY usr/ /usr/
 
 
 # Expose the DistCC server's normal job and statistics subservice port.

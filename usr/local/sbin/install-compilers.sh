@@ -3,10 +3,11 @@
 #
 # Install LTS compiler versions into the image (or the container).
 
-COMPILERS_INSTALLED_STAMP="/var/lib/.distcc-compilers-done"
+COMPILERS_INSTALLED_STAMP="/var/lib/distcc-compilers-done"
 
 if [ -f "$COMPILERS_INSTALLED_STAMP" ]; then
-  echo "[^:)] The compilers are already installed appropriately, skipping..." >&2
+  echo "[^:)] The compilers are already installed appropriately," \
+    "skipping..." >&2
   exit 0
 else
   echo "[...] Installing C, C++ compilers..." >&2
@@ -62,7 +63,7 @@ if [[ "$OS_RELEASE" == "focal" ]]; then
     | cut -d ':' -f 6 \
     | cut -d ' ' -f 3)"
   apt-key adv --keyserver "hkp://keyserver.ubuntu.com:80" --recv-keys "$KEY"
-  mv "/etc/apt/trusted.gpg" "/etc/apt/keyrings/ubuntu-toolchain-r.gpg"
+  mv -v "/etc/apt/trusted.gpg" "/etc/apt/keyrings/ubuntu-toolchain-r.gpg"
 
   apt-get update -y
 
@@ -88,5 +89,5 @@ fi
 
 update-distcc-symlinks
 touch "$COMPILERS_INSTALLED_STAMP"
-chmod 444 "$COMPILERS_INSTALLED_STAMP"
+chmod -v 444 "$COMPILERS_INSTALLED_STAMP"
 exit 0

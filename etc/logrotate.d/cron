@@ -1,6 +1,6 @@
 /var/log/cron.log {
   daily
-  rotate 30
+  rotate 7
 
   compress
   copytruncate
