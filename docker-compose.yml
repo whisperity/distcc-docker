@@ -14,7 +14,6 @@ services:
       - type: tmpfs
         target: "/tmp"
         tmpfs:
-          mode: 1770
           size: "8G"
     # Specify
     #     command: >

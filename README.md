@@ -60,7 +60,7 @@ The running container will act as the master DistCC daemon of the host computer,
 docker run  \
   --detach \
   --init \
-  --mount type=tmpfs,destination=/tmp,tmpfs-mode=1770,tmpfs-size=8G \
+  --mount type=tmpfs,destination=/tmp,tmpfs-size=8G \
   --publish 3632:3632/tcp \
   --publish 3633:3633/tcp \
   --restart unless-stopped \
